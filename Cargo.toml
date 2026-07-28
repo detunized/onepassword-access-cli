@@ -1,0 +1,28 @@
+[package]
+name = "onepassword-cli"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bitwarden-onepassword = { path = "../sdk-internal/crates/bitwarden-onepassword" }
+
+anyhow = ">=1.0, <2.0"
+async-trait = ">=0.1.80, <0.2"
+clap = { version = "4.5.4", features = ["derive"] }
+data-encoding = ">=2.0, <3"
+hmac = "0.13.0"
+reqwest = { version = "0.13.3", default-features = false, features = [
+    "json",
+    "http2",
+    "rustls",
+] }
+serde = { version = ">=1.0, <2.0", features = ["derive"] }
+sha1 = "0.11.0"
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+toml = "0.9"
+
+# sdk-internal pins this because crypto-bigint 0.7.0-0.7.4 were yanked and 0.7.5 has not propagated
+# to the sparse index. Keep it in sync with sdk-internal's root Cargo.toml.
+[patch.crates-io]
+crypto-bigint = { git = "https://github.com/RustCrypto/crypto-bigint", tag = "v0.7.5" }

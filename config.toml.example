@@ -1,0 +1,17 @@
+# Copy to config.toml (git-ignored) and fill in a real account.
+username = "user@example.com"
+password = "master password"
+secret_key = "A3-XXXXXX-XXXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+
+# Region shorthand (global/eu/ca) or a full Enterprise sign-in address. Defaults to global.
+# domain = "eu"
+
+# Reuse a device id across logins so 1Password does not re-register the device every time. The CLI
+# prints a fresh one on first run.
+# device_id = "abcdefghijklmnopqrstuvwxyz"
+
+# When set, the CLI generates the TOTP code instead of prompting for it.
+# totp_secret = "BASE32SECRET"
+
+# Route traffic through a debugging proxy. Disables TLS verification.
+# proxy = "http://localhost:8888"
