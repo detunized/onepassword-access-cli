@@ -3,6 +3,7 @@
 //! It exists so the SDK crate can be exercised end to end without a Bitwarden server: log in with
 //! real credentials, download the vaults, and print the decrypted native model.
 
+use std::collections::BTreeMap;
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,9 +24,14 @@ use sha1::Sha1;
 #[derive(Parser)]
 #[command(name = "onepassword-cli", about, version)]
 struct Cli {
-    /// Path to the TOML config holding the account credentials.
+    /// Path to the TOML config holding the accounts.
     #[arg(long, default_value = "config.toml")]
     config: PathBuf,
+
+    /// Which account to use. Defaults to the config's `default`, or to the only account when there
+    /// is just one.
+    #[arg(long, short)]
+    account: Option<String>,
 
     /// Route all traffic through an HTTP proxy (e.g. http://localhost:8888 for Charles). Disables
     /// TLS certificate verification so a MITM debugging proxy can decrypt the traffic.
@@ -38,6 +44,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// List the accounts in the config.
+    Accounts,
     /// Log in to 1Password and establish a session.
     Login,
     /// List the vaults accessible to the account.
@@ -46,9 +54,16 @@ enum Command {
     Dump,
 }
 
-/// Account credentials and connection settings, loaded from `config.toml`.
+/// The config file: a set of named accounts plus which one to use when none is given.
 #[derive(Debug, Deserialize)]
 struct Config {
+    default: Option<String>,
+    accounts: BTreeMap<String, Account>,
+}
+
+/// One account's credentials and connection settings.
+#[derive(Debug, Deserialize)]
+struct Account {
     username: String,
     password: String,
     secret_key: String,
@@ -58,54 +73,127 @@ struct Config {
     totp_secret: Option<String>,
 }
 
+impl Config {
+    /// Picks the requested account, falling back to `default` and then to the only account.
+    fn select(mut self, name: Option<&str>) -> Result<(String, Account)> {
+        let name = match name.map(str::to_string).or_else(|| self.default.clone()) {
+            Some(name) => name,
+            None if self.accounts.len() == 1 => self
+                .accounts
+                .keys()
+                .next()
+                .cloned()
+                .expect("checked there is exactly one"),
+            None => anyhow::bail!(
+                "no account given and no `default` in the config; pick one of: {}",
+                self.names()
+            ),
+        };
+
+        let names = self.names();
+        self.accounts
+            .remove(&name)
+            .map(|account| (name.clone(), account))
+            .with_context(|| format!("no account named '{name}' in the config; found: {names}"))
+    }
+
+    fn names(&self) -> String {
+        self.accounts.keys().cloned().collect::<Vec<_>>().join(", ")
+    }
+}
+
 fn load_config(path: &PathBuf) -> Result<Config> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read config file {}", path.display()))?;
     toml::from_str(&text).with_context(|| format!("failed to parse config file {}", path.display()))
 }
 
+/// Prints the configured accounts without revealing any secrets.
+fn list_accounts(config: &Config) -> Result<()> {
+    if config.accounts.is_empty() {
+        println!("No accounts in the config.");
+        return Ok(());
+    }
+
+    let width = config
+        .accounts
+        .keys()
+        .map(|name| name.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    for (name, account) in &config.accounts {
+        let marker = if config.default.as_deref() == Some(name.as_str()) {
+            "*"
+        } else {
+            " "
+        };
+        let domain = account.domain.as_deref().unwrap_or("my.1password.com");
+        let totp = if account.totp_secret.is_some() {
+            "totp"
+        } else {
+            "no totp"
+        };
+        println!(
+            "{marker} {name:<width$}  {}  ({domain}, {totp})",
+            account.username
+        );
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let Cli {
         config,
+        account,
         proxy,
         command,
     } = Cli::parse();
 
+    let config = load_config(&config)?;
+    if matches!(command, Command::Accounts) {
+        return list_accounts(&config);
+    }
+
+    let (name, account) = config.select(account.as_deref())?;
+    println!("Using account '{name}' ({}).", account.username);
+
     match command {
-        Command::Login => login(load_config(&config)?, proxy).await,
-        Command::ListVaults => list_vaults(load_config(&config)?, proxy).await,
-        Command::Dump => dump(load_config(&config)?, proxy).await,
+        Command::Accounts => unreachable!("handled above"),
+        Command::Login => login(name, account, proxy).await,
+        Command::ListVaults => list_vaults(name, account, proxy).await,
+        Command::Dump => dump(name, account, proxy).await,
     }
 }
 
-async fn authenticate(config: Config, proxy: Option<String>) -> Result<Session> {
-    let device_uuid = match config.device_id {
+async fn authenticate(name: String, account: Account, proxy: Option<String>) -> Result<Session> {
+    let device_uuid = match account.device_id {
         Some(id) => id,
         None => {
             let id = generate_device_uuid();
-            println!("No device id in config; generated a new one: {id}");
-            println!("Add `device_id = \"{id}\"` to config.toml to reuse it on the next login.");
+            println!("No device id for '{name}'; generated a new one: {id}");
+            println!("Add `device_id = \"{id}\"` under [accounts.{name}] to reuse it next time.");
             id
         }
     };
 
-    let region = config
+    let region = account
         .domain
         .as_deref()
         .map_or(Region::Global, Region::parse);
     let credentials = Credentials {
-        username: config.username,
-        password: config.password,
-        account_key: config.secret_key,
+        username: account.username,
+        password: account.password,
+        account_key: account.secret_key,
         domain: region.domain().to_string(),
         device_uuid,
     };
 
     let ui = CliTwoFactorUi {
-        totp_secret: config.totp_secret,
+        totp_secret: account.totp_secret,
     };
-    let http = build_http_client(proxy.or(config.proxy).as_deref())?;
+    let http = build_http_client(proxy.or(account.proxy).as_deref())?;
     Client::new(http)
         .login(&credentials, &ui)
         .await
@@ -185,14 +273,14 @@ fn generate_totp_at(secret: &str, unix_time: u64) -> Result<String> {
     Ok(format!("{:06}", binary % 1_000_000))
 }
 
-async fn login(config: Config, proxy: Option<String>) -> Result<()> {
-    let session = authenticate(config, proxy).await?;
+async fn login(name: String, account: Account, proxy: Option<String>) -> Result<()> {
+    let session = authenticate(name, account, proxy).await?;
     println!("Logged in as {}.", session.credentials().username);
     Ok(())
 }
 
-async fn list_vaults(config: Config, proxy: Option<String>) -> Result<()> {
-    let mut session = authenticate(config, proxy).await?;
+async fn list_vaults(name: String, account: Account, proxy: Option<String>) -> Result<()> {
+    let mut session = authenticate(name, account, proxy).await?;
     let vaults = session
         .download_all_vaults()
         .await
@@ -209,8 +297,8 @@ async fn list_vaults(config: Config, proxy: Option<String>) -> Result<()> {
     Ok(())
 }
 
-async fn dump(config: Config, proxy: Option<String>) -> Result<()> {
-    let mut session = authenticate(config, proxy).await?;
+async fn dump(name: String, account: Account, proxy: Option<String>) -> Result<()> {
+    let mut session = authenticate(name, account, proxy).await?;
     let vaults = session
         .download_all_vaults()
         .await

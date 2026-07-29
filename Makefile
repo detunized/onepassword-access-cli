@@ -3,8 +3,10 @@
 # `make run PROXY=http://localhost:9090`.
 PROXY ?= http://localhost:8888
 ARGS ?= dump
+ACCOUNT ?=
 
 PROXY_FLAG := $(if $(PROXY),--proxy $(PROXY),)
+ACCOUNT_FLAG := $(if $(ACCOUNT),--account $(ACCOUNT),)
 
 .PHONY: build run test lint
 
@@ -12,7 +14,7 @@ build:
 	cargo build
 
 run:
-	cargo run -- $(PROXY_FLAG) $(ARGS)
+	cargo run -- $(PROXY_FLAG) $(ACCOUNT_FLAG) $(ARGS)
 
 test:
 	cargo test

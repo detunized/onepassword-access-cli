@@ -1,4 +1,11 @@
-# Copy to config.toml (git-ignored) and fill in a real account.
+# Copy to config.toml (git-ignored) and fill in real accounts.
+#
+# Accounts are named. Pick one with --account/-a, or leave it to `default`.
+# `onepassword-cli accounts` lists them without printing any secrets.
+
+default = "my-account"
+
+[accounts.my-account]
 username = "user@example.com"
 password = "master password"
 secret_key = "A3-XXXXXX-XXXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
@@ -10,8 +17,14 @@ secret_key = "A3-XXXXXX-XXXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
 # prints a fresh one on first run.
 # device_id = "abcdefghijklmnopqrstuvwxyz"
 
-# When set, the CLI generates the TOTP code instead of prompting for it.
+# When set, the CLI generates the TOTP code instead of prompting for it. Only helps on accounts
+# whose second factor is an authenticator app; Duo and WebAuthn are not supported.
 # totp_secret = "BASE32SECRET"
 
-# Route traffic through a debugging proxy. Disables TLS verification.
+# Route this account's traffic through a debugging proxy. Disables TLS verification.
 # proxy = "http://localhost:8888"
+
+[accounts.another-account]
+username = "other@example.com"
+password = "master password"
+secret_key = "A3-XXXXXX-XXXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
