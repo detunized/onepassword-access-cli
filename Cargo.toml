@@ -5,7 +5,10 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bitwarden-onepassword = { path = "../sdk-internal/crates/bitwarden-onepassword" }
+# The access module is private to bitwarden-importers; `test-utils` re-exports it for this CLI.
+bitwarden-importers = { path = "../sdk-internal/crates/bitwarden-importers", features = [
+    "test-utils",
+] }
 
 anyhow = ">=1.0, <2.0"
 async-trait = ">=0.1.80, <0.2"

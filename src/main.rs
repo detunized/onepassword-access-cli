@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use bitwarden_onepassword::model::{Field, Item, Vault};
-use bitwarden_onepassword::{
+use bitwarden_importers::onepassword_access::model::{Field, Item, Vault};
+use bitwarden_importers::onepassword_access::{
     Client, Credentials, Region, Session, TotpResult, TwoFactorUi, generate_device_uuid,
 };
 use clap::{Parser, Subcommand};
