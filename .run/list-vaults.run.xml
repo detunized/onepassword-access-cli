@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="list-vaults" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+    <option name="command" value="run --bin onepassword-cli -- list-vaults" />
+    <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+    <option name="emulateTerminal" value="true" />
+    <envs>
+      <env name="RUST_BACKTRACE" value="1" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>

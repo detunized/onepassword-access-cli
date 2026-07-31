@@ -1,0 +1,106 @@
+{
+  // Debug the CLI with CodeLLDB. The access module is a path dependency, so its source paths are
+  // baked into the binary's debug info: breakpoints inside bitwarden-importers bind directly, with
+  // no source mapping. Open onepassword.code-workspace to have both repos in one window.
+  //
+  // To debug the access module's own unit tests instead, use the "Debug" codelens that
+  // rust-analyzer puts above each #[test] in the sdk-internal window. bitwarden-importers is
+  // outside this workspace, so cargo here cannot build its tests.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "login",
+      "cargo": {
+        "args": ["build", "--bin=onepassword-cli"],
+        "filter": { "name": "onepassword-cli", "kind": "bin" }
+      },
+      "args": ["login"],
+      "cwd": "${workspaceFolder}",
+      // An integrated terminal, so the stdin TOTP prompt works for accounts without a totp_secret.
+      "terminal": "integrated",
+      "env": { "RUST_BACKTRACE": "1" },
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "list-vaults",
+      "cargo": {
+        "args": ["build", "--bin=onepassword-cli"],
+        "filter": { "name": "onepassword-cli", "kind": "bin" }
+      },
+      "args": ["list-vaults"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "env": { "RUST_BACKTRACE": "1" },
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "dump",
+      "cargo": {
+        "args": ["build", "--bin=onepassword-cli"],
+        "filter": { "name": "onepassword-cli", "kind": "bin" }
+      },
+      "args": ["dump"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "env": { "RUST_BACKTRACE": "1" },
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "custom (prompts for account and command)",
+      "cargo": {
+        "args": ["build", "--bin=onepassword-cli"],
+        "filter": { "name": "onepassword-cli", "kind": "bin" }
+      },
+      "args": ["--account", "${input:account}", "${input:command}"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "env": { "RUST_BACKTRACE": "1" },
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "dump through the MITM proxy",
+      "cargo": {
+        "args": ["build", "--bin=onepassword-cli"],
+        "filter": { "name": "onepassword-cli", "kind": "bin" }
+      },
+      // Needs a proxy listening on 8888 (Charles, mitmproxy). Disables cert verification.
+      "args": ["--proxy", "http://localhost:8888", "dump"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "env": { "RUST_BACKTRACE": "1" },
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "attach to a running onepassword-cli",
+      "pid": "${command:pickMyProcess}",
+      "sourceLanguages": ["rust"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "account",
+      "type": "promptString",
+      "description": "Account name from config.toml",
+      "default": "totp"
+    },
+    {
+      "id": "command",
+      "type": "pickString",
+      "description": "Subcommand",
+      "options": ["login", "list-vaults", "dump", "accounts"],
+      "default": "login"
+    }
+  ]
+}

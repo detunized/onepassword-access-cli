@@ -1,0 +1,23 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="access module tests" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+    <option name="buildProfileId" value="test" />
+    <option name="command" value="test --package bitwarden-importers --all-features onepassword::access" />
+    <option name="workingDirectory" value="file://$PROJECT_DIR$/../sdk-internal" />
+    <envs>
+      <!-- sdk-internal's dev profile is opt-level 1, which inlines #[inline] std helpers such as
+           Vec::as_slice into your functions. Inlined code has no callable symbol, so step filters
+           cannot skip it. Building at 0 makes them real calls the filters can skip. -->
+      <env name="CARGO_PROFILE_DEV_OPT_LEVEL" value="0" />
+    </envs>
+    <option name="emulateTerminal" value="false" />
+    <option name="channel" value="DEFAULT" />
+    <option name="requiredFeatures" value="true" />
+    <option name="allFeatures" value="false" />
+    <option name="withSudo" value="false" />
+    <option name="buildTarget" value="REMOTE" />
+    <option name="backtrace" value="SHORT" />
+    <option name="isRedirectInput" value="false" />
+    <option name="redirectInputPath" value="" />
+    <method v="2" />
+  </configuration>
+</component>

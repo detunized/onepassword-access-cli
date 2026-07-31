@@ -1,0 +1,20 @@
+{
+  // Keep rust-analyzer's checks out of the same target dir the debugger builds into, so background
+  // analysis does not hold the cargo lock while you are trying to start a debug session.
+  "rust-analyzer.cargo.targetDir": true,
+  "lldb.showDisassembly": "never",
+  "lldb.dereferencePointers": true,
+
+  // Applied to every launch config in launch.json. LLDB's default step-avoid-regexp is "^std::",
+  // a C++ default that misses core:: and alloc::, so Step Into drops you inside String::deref and
+  // friends. This widens it to the whole standard library, including the shapes that carry no
+  // crate prefix (<str>::to_uppercase, <T as alloc::string::ToString>::to_string) and the legacy
+  // mangling LLDB does not fully demangle (_$LT$alloc..string..String$u20$as$u20$...).
+  //
+  // The async runtime is in the first group too, so stepping over an .await does not walk you
+  // through tokio's poll and park machinery on the way back to your own code. Add crate names to
+  // that group to skip more; leave bitwarden_ out, that is the code you want.
+  "lldb.launch.initCommands": [
+    "settings set target.process.thread.step-avoid-regexp ^(_\\$LT\\$|<)*(\\[|&|(std|core|alloc|tokio|hyper|h2|reqwest|futures_util|futures_core|mio)(::|\\.\\.)|([A-Z]|str|char|bool|u(8|16|32|64|128|size)|i(8|16|32|64|128|size)|f(32|64))(>|( as |\\$u20\\$as\\$u20\\$)(std|core|alloc)(::|\\.\\.)))"
+  ]
+}

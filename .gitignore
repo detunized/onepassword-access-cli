@@ -1,2 +1,5 @@
 /target/
 config.toml
+
+# RustRover project state. The shareable run configurations in .run/ are kept.
+/.idea/
