@@ -142,7 +142,7 @@ fn list_accounts(config: &Config) -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let Cli {
         config,
