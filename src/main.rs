@@ -144,6 +144,8 @@ fn list_accounts(config: &Config) -> Result<()> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
+    println!("Hey!!!");
+
     let Cli {
         config,
         account,
@@ -216,10 +218,7 @@ impl TwoFactorUi for CliTwoFactorUi {
                         "Submitting a generated TOTP code (attempt {}).",
                         attempt + 1
                     );
-                    return TotpResult::Code {
-                        passcode,
-                        remember_me: false,
-                    };
+                    return TotpResult::Code(passcode);
                 }
                 Err(error) => eprintln!("Failed to generate a TOTP code: {error:#}"),
             }
@@ -234,10 +233,7 @@ impl TwoFactorUi for CliTwoFactorUi {
             Ok(0) | Err(_) => TotpResult::Cancel,
             Ok(_) => match line.trim() {
                 "" => TotpResult::Cancel,
-                code => TotpResult::Code {
-                    passcode: code.to_string(),
-                    remember_me: false,
-                },
+                code => TotpResult::Code(code.to_string()),
             },
         }
     }
