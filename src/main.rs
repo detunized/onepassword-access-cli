@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bitwarden_importers::onepassword_access::model::{Field, Item, Vault};
 use bitwarden_importers::onepassword_access::{
-    Client, Credentials, Region, Session, TotpResult, TwoFactorUi, generate_device_uuid,
+    Client, Credentials, Region, TotpResult, TwoFactorUi, generate_device_uuid,
 };
 use clap::{Parser, Subcommand};
 use data_encoding::BASE32_NOPAD;
@@ -46,10 +46,6 @@ struct Cli {
 enum Command {
     /// List the accounts in the config.
     Accounts,
-    /// Log in to 1Password and establish a session.
-    Login,
-    /// List the vaults accessible to the account.
-    ListVaults,
     /// Download and print every vault and item in the native 1Password model.
     Dump,
 }
@@ -163,13 +159,16 @@ async fn main() -> Result<()> {
 
     match command {
         Command::Accounts => unreachable!("handled above"),
-        Command::Login => login(name, account, proxy).await,
-        Command::ListVaults => list_vaults(name, account, proxy).await,
         Command::Dump => dump(name, account, proxy).await,
     }
 }
 
-async fn authenticate(name: String, account: Account, proxy: Option<String>) -> Result<Session> {
+/// Builds everything a command needs: the client, the credentials and the 2FA callback.
+fn prepare(
+    name: String,
+    account: Account,
+    proxy: Option<String>,
+) -> Result<(Client, Credentials, CliTwoFactorUi)> {
     let device_uuid = match account.device_id {
         Some(id) => id,
         None => {
@@ -196,10 +195,8 @@ async fn authenticate(name: String, account: Account, proxy: Option<String>) -> 
         totp_secret: account.totp_secret,
     };
     let http = build_http_client(proxy.or(account.proxy).as_deref())?;
-    Client::new(http)
-        .login(&credentials, &ui)
-        .await
-        .context("login failed")
+
+    Ok((Client::new(http), credentials, ui))
 }
 
 /// Supplies TOTP codes from `totp_secret` when present, otherwise prompts on stdin. Implements the
@@ -269,34 +266,10 @@ fn generate_totp_at(secret: &str, unix_time: u64) -> Result<String> {
     Ok(format!("{:06}", binary % 1_000_000))
 }
 
-async fn login(name: String, account: Account, proxy: Option<String>) -> Result<()> {
-    let session = authenticate(name, account, proxy).await?;
-    println!("Logged in as {}.", session.credentials().username);
-    Ok(())
-}
-
-async fn list_vaults(name: String, account: Account, proxy: Option<String>) -> Result<()> {
-    let mut session = authenticate(name, account, proxy).await?;
-    let vaults = session
-        .download_all_vaults()
-        .await
-        .context("failed to download vaults")?;
-
-    for vault in &vaults {
-        println!(
-            "{} ({}) - {} item(s)",
-            vault.name,
-            vault.id,
-            vault.items.len()
-        );
-    }
-    Ok(())
-}
-
 async fn dump(name: String, account: Account, proxy: Option<String>) -> Result<()> {
-    let mut session = authenticate(name, account, proxy).await?;
-    let vaults = session
-        .download_all_vaults()
+    let (client, credentials, ui) = prepare(name, account, proxy)?;
+    let vaults = client
+        .download_all_vaults(&credentials, &ui)
         .await
         .context("failed to download vaults")?;
 
