@@ -1,6 +1,6 @@
 # onepassword-access-cli
 
-A local test client for the 1Password access module in Bitwarden's
+A local vibe coded test client for the 1Password access module in Bitwarden's
 [sdk-internal](https://github.com/bitwarden/sdk-internal). It logs in to a real 1Password account,
 downloads every vault, and prints the decrypted contents.
 
