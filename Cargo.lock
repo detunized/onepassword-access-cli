@@ -2612,6 +2612,7 @@ dependencies = [
  "hmac 0.13.0",
  "reqwest",
  "serde",
+ "serde_json",
  "sha1",
  "tokio",
  "toml",

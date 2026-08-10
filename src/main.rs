@@ -10,7 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use bitwarden_importers::onepassword_access::model::{Field, Item, Vault};
+use bitwarden_importers::onepassword_access::model::{Item, Vault};
+use bitwarden_importers::onepassword_access::wire::{VaultItemOverview, VaultItemSectionField};
 use bitwarden_importers::onepassword_access::{
     Client, Credentials, Region, TotpResult, TwoFactorUi, generate_device_uuid,
 };
@@ -140,8 +141,6 @@ fn list_accounts(config: &Config) -> Result<()> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    println!("Hey!!!");
-
     let Cli {
         config,
         account,
@@ -334,25 +333,37 @@ fn print_vault(vault: &Vault, color: bool) {
 }
 
 fn print_item(item: &Item, color: bool) {
+    let overview = &item.overview;
+    let details = &item.details;
+
     println!();
     println!(
         "  {} {}   {}",
         paint("●", CYAN, color),
-        paint(&item.title, BOLD, color),
+        paint(
+            overview.title.as_deref().unwrap_or("(untitled)"),
+            BOLD,
+            color
+        ),
         paint(&format!("[{}]", item.category), CYAN, color),
     );
 
     prop("id", &item.id, color);
-    if !item.additional_info.is_empty() {
-        prop("info", &item.additional_info, color);
+    opt_prop("info", overview.ainfo.as_deref(), color);
+
+    // The designation fields: a login's username and password.
+    for field in details.fields.iter().flatten() {
+        let label = field
+            .designation
+            .as_deref()
+            .or(field.name.as_deref())
+            .unwrap_or("field");
+        opt_prop(label, field.value.as_deref(), color);
     }
-    if !item.username.is_empty() {
-        prop("username", &item.username, color);
-    }
-    if !item.password.is_empty() {
-        prop("password", &item.password, color);
-    }
-    for (label, value) in unique_urls(item) {
+    // A Password item keeps its secret here instead.
+    opt_prop("password", details.password.as_deref(), color);
+
+    for (label, value) in unique_urls(overview) {
         let shown = if label.is_empty() {
             value
         } else {
@@ -360,28 +371,27 @@ fn print_item(item: &Item, color: bool) {
         };
         prop("url", &shown, color);
     }
-    for otp in &item.otps {
-        prop("otp", &format!("{} = {}", otp.label, otp.secret), color);
+
+    if let Some(tags) = &overview.tags
+        && !tags.is_empty()
+    {
+        prop("tags", &tags.join(", "), color);
     }
-    if !item.note.is_empty() {
-        prop("note", &item.note.replace('\n', " "), color);
+    if let Some(note) = &details.note
+        && !note.is_empty()
+    {
+        prop("note", &note.replace('\n', " "), color);
     }
-    if let Some(ssh) = &item.ssh_key {
+    for past in details.password_history.iter().flatten() {
+        let value = past.value.as_deref().unwrap_or("");
         prop(
-            "ssh key",
-            &format!("{} ({})", ssh.key_type, ssh.fingerprint),
+            "was",
+            &format!("{value}  (at {})", past.time.unwrap_or(0)),
             color,
         );
-        if !ssh.public_key.is_empty() {
-            prop("pubkey", &ssh.public_key, color);
-        }
-        if !ssh.private_key.is_empty() {
-            println!("    {}", paint("private key", DIM, color));
-            println!("{}", ssh.private_key);
-        }
     }
 
-    print_fields(&item.fields, color);
+    print_sections(item, color);
 }
 
 /// Prints one aligned `key   value` property line.
@@ -389,54 +399,84 @@ fn prop(key: &str, value: &str, color: bool) {
     println!("    {} {value}", paint(&format!("{key:<9}"), DIM, color));
 }
 
-/// Prints the section fields grouped under their section titles, with aligned labels.
-fn print_fields(fields: &[Field], color: bool) {
-    if fields.is_empty() {
-        return;
+/// Prints a property only when it carries a non-empty value.
+fn opt_prop(key: &str, value: Option<&str>, color: bool) {
+    if let Some(value) = value
+        && !value.is_empty()
+    {
+        prop(key, value, color);
     }
+}
 
-    let width = fields
-        .iter()
-        .map(|field| field.label.chars().count())
-        .max()
-        .unwrap_or(0)
-        .clamp(4, 28);
-
-    let mut current: Option<&str> = None;
-    for field in fields {
-        if current != Some(field.section.as_str()) {
-            current = Some(field.section.as_str());
-            let header = if field.section.is_empty() {
-                "Fields"
-            } else {
-                field.section.as_str()
-            };
-            println!("    {}", paint(header, YELLOW, color));
+/// Prints every section with its fields, and unpacks any SSH key attributes.
+fn print_sections(item: &Item, color: bool) {
+    for section in item.details.sections.iter().flatten() {
+        let fields: Vec<_> = section.fields.iter().flatten().collect();
+        if fields.is_empty() {
+            continue;
         }
 
-        let label = if field.label.is_empty() {
-            "—"
-        } else {
-            field.label.as_str()
-        };
-        let kind = if field.kind.is_empty() || field.kind == "string" {
-            String::new()
-        } else {
-            paint(&format!("  ({})", field.kind), DIM, color)
-        };
-        println!(
-            "      {} {}{kind}",
-            paint(&format!("{label:<width$}"), DIM, color),
-            field.value,
-        );
+        let header = section
+            .name
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .unwrap_or("Fields");
+        println!("    {}", paint(header, YELLOW, color));
+
+        let width = fields
+            .iter()
+            .map(|f| f.name.as_deref().unwrap_or("").chars().count())
+            .max()
+            .unwrap_or(0)
+            .clamp(4, 28);
+
+        for field in fields {
+            let label = field
+                .name
+                .as_deref()
+                .filter(|t| !t.is_empty())
+                .unwrap_or("—");
+            let kind = match field.kind.as_deref() {
+                None | Some("string") => String::new(),
+                Some(kind) => paint(&format!("  ({kind})"), DIM, color),
+            };
+            println!(
+                "      {} {}{kind}",
+                paint(&format!("{label:<width$}"), DIM, color),
+                field_value(field),
+            );
+
+            if let Some(ssh) = field.attributes.as_ref().and_then(|a| a.ssh_key.as_ref()) {
+                opt_prop("fingerprint", ssh.fingerprint.as_deref(), color);
+                opt_prop("pubkey", ssh.public_key.as_deref(), color);
+                if let Some(private_key) = &ssh.private_key {
+                    println!("    {}", paint("private key", DIM, color));
+                    println!("{private_key}");
+                }
+            }
+        }
+    }
+}
+
+/// Renders a section field's polymorphic value: strings pass through, anything else as JSON.
+fn field_value(field: &VaultItemSectionField) -> String {
+    match &field.value {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+        None => String::new(),
     }
 }
 
 /// Collects an item's URLs (main URL first), dropping empties and duplicates.
-fn unique_urls(item: &Item) -> Vec<(String, String)> {
+fn unique_urls(overview: &VaultItemOverview) -> Vec<(String, String)> {
     let mut urls: Vec<(String, String)> = Vec::new();
-    let candidates = std::iter::once((String::new(), item.url.clone()))
-        .chain(item.urls.iter().map(|u| (u.label.clone(), u.value.clone())));
+    let candidates = std::iter::once((String::new(), overview.url.clone().unwrap_or_default()))
+        .chain(overview.urls.iter().flatten().map(|u| {
+            (
+                u.name.clone().unwrap_or_default(),
+                u.url.clone().unwrap_or_default(),
+            )
+        }));
     for (label, value) in candidates {
         if !value.is_empty() && !urls.iter().any(|(_, existing)| *existing == value) {
             urls.push((label, value));
