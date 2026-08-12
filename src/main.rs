@@ -105,6 +105,17 @@ fn load_config(path: &PathBuf) -> Result<Config> {
     toml::from_str(&text).with_context(|| format!("failed to parse config file {}", path.display()))
 }
 
+/// Resolves what the config file holds: a region shorthand, or a custom sign-in domain. The SDK
+/// takes a plain domain, so anything that is not a known shorthand passes straight through.
+fn sign_in_domain(value: &str) -> String {
+    match value.to_lowercase().as_str() {
+        "global" | "com" | "us" | "my.1password.com" => Region::Global.domain().to_string(),
+        "europe" | "eu" | "my.1password.eu" => Region::Europe.domain().to_string(),
+        "canada" | "ca" | "my.1password.ca" => Region::Canada.domain().to_string(),
+        _ => value.to_string(),
+    }
+}
+
 /// Prints the configured accounts without revealing any secrets.
 fn list_accounts(config: &Config) -> Result<()> {
     if config.accounts.is_empty() {
@@ -178,15 +189,14 @@ fn prepare(
         }
     };
 
-    let region = account
-        .domain
-        .as_deref()
-        .map_or(Region::Global, Region::parse);
     let credentials = Credentials {
         username: account.username,
         password: account.password,
         account_key: account.secret_key,
-        domain: region.domain().to_string(),
+        domain: account
+            .domain
+            .as_deref()
+            .map_or_else(|| Region::Global.domain().to_string(), sign_in_domain),
         device_uuid,
     };
 
