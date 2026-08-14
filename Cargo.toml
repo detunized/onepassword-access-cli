@@ -25,8 +25,3 @@ sha1 = "0.11.0"
 tokio = { version = "1.36.0", features = ["macros", "rt"] }
 toml = "0.9"
 serde_json = "1.0.151"
-
-# sdk-internal pins this because crypto-bigint 0.7.0-0.7.4 were yanked and 0.7.5 has not propagated
-# to the sparse index. Keep it in sync with sdk-internal's root Cargo.toml.
-[patch.crates-io]
-crypto-bigint = { git = "https://github.com/RustCrypto/crypto-bigint", tag = "v0.7.5" }
