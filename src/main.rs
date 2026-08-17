@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use bitwarden_importers::onepassword_access::model::{Item, Vault};
 use bitwarden_importers::onepassword_access::wire::{VaultItemOverview, VaultItemSectionField};
 use bitwarden_importers::onepassword_access::{
-    Client, Credentials, Region, TotpResult, TwoFactorUi, generate_device_uuid,
+    Client, Credentials, SignInAddress, SignInDomain, TotpResult, TwoFactorUi, generate_device_uuid,
 };
 use clap::{Parser, Subcommand};
 use data_encoding::BASE32_NOPAD;
@@ -105,15 +105,41 @@ fn load_config(path: &PathBuf) -> Result<Config> {
     toml::from_str(&text).with_context(|| format!("failed to parse config file {}", path.display()))
 }
 
-/// Resolves what the config file holds: a region shorthand, or a custom sign-in domain. The SDK
-/// takes a plain domain, so anything that is not a known shorthand passes straight through.
-fn sign_in_domain(value: &str) -> String {
-    match value.to_lowercase().as_str() {
-        "global" | "com" | "us" | "my.1password.com" => Region::Global.domain().to_string(),
-        "europe" | "eu" | "my.1password.eu" => Region::Europe.domain().to_string(),
-        "canada" | "ca" | "my.1password.ca" => Region::Canada.domain().to_string(),
-        _ => value.to_string(),
+/// The address an account signs in at when the config says nothing.
+const DEFAULT_SIGN_IN_ADDRESS: &str = "my.1password.com";
+
+/// Resolves what the config file holds: a domain shorthand, or a full sign-in address.
+///
+/// The SDK takes the subdomain and the domain apart, so a full address has to be split here.
+fn sign_in_address(value: &str) -> Result<SignInAddress> {
+    let value = value.trim().to_lowercase();
+
+    let shorthand = match value.as_str() {
+        "global" | "com" | "us" => Some(SignInDomain::Global),
+        "europe" | "eu" => Some(SignInDomain::Europe),
+        "canada" | "ca" => Some(SignInDomain::Canada),
+        "enterprise" | "ent" => Some(SignInDomain::Enterprise),
+        _ => None,
+    };
+    if let Some(domain) = shorthand {
+        return Ok(SignInAddress::new("my", domain)?);
     }
+
+    // Enterprise comes first: it ends in `.1password.com` too, and matching that one first would
+    // leave `acme.ent` as the subdomain.
+    let domains = [
+        SignInDomain::Enterprise,
+        SignInDomain::Global,
+        SignInDomain::Europe,
+        SignInDomain::Canada,
+    ];
+    for domain in domains {
+        if let Some(subdomain) = value.strip_suffix(&format!(".{}", domain.as_str())) {
+            return Ok(SignInAddress::new(subdomain, domain)?);
+        }
+    }
+
+    anyhow::bail!("'{value}' is not a 1Password sign-in address")
 }
 
 /// Prints the configured accounts without revealing any secrets.
@@ -136,7 +162,7 @@ fn list_accounts(config: &Config) -> Result<()> {
         } else {
             " "
         };
-        let domain = account.domain.as_deref().unwrap_or("my.1password.com");
+        let domain = account.domain.as_deref().unwrap_or(DEFAULT_SIGN_IN_ADDRESS);
         let totp = if account.totp_secret.is_some() {
             "totp"
         } else {
@@ -193,10 +219,9 @@ fn prepare(
         username: account.username,
         password: account.password,
         account_key: account.secret_key,
-        domain: account
-            .domain
-            .as_deref()
-            .map_or_else(|| Region::Global.domain().to_string(), sign_in_domain),
+        sign_in_address: sign_in_address(
+            account.domain.as_deref().unwrap_or(DEFAULT_SIGN_IN_ADDRESS),
+        )?,
         device_uuid,
     };
 
